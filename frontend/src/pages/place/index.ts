@@ -1,0 +1,1 @@
+export { PlacePage } from './PlacePage'

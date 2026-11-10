@@ -1,0 +1,31 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: detect-private-key
+
+  - repo: local
+    hooks:
+      - id: forbid-env-files
+        name: Запрет коммита .env файлов
+        entry: Файлы .env коммитить нельзя
+        language: fail
+        files: '(^|/)\.env(\..+)?$'
+        exclude: '\.env\.example$'
+
+      - id: backend-checks
+        name: Backend (ruff + mypy + import-linter + pytest)
+        entry: powershell -NoProfile -Command "cd backend; python -m uv run ruff format --check .; python -m uv run ruff check .; python -m uv run mypy; python -m uv run lint-imports; python -m uv run pytest"
+        language: system
+        pass_filenames: false
+        files: '^backend/'
+
+      - id: frontend-checks
+        name: Frontend (prettier + eslint + tsc + vitest)
+        entry: powershell -NoProfile -Command "cd frontend; npm run check"
+        language: system
+        pass_filenames: false
+        files: '^frontend/'

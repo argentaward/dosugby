@@ -1,0 +1,179 @@
+[project]
+name = "dosug-backend"
+version = "0.1.0"
+description = "Dosug — подбор досуга по сценариям (backend API)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "aiosqlite>=0.20",
+    "alembic>=1.14",
+    "sqladmin>=0.20",
+    "itsdangerous>=2.2",
+    "httpx>=0.28",
+]
+
+[project.optional-dependencies]
+postgres = ["asyncpg>=0.30"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "httpx>=0.28",
+    "import-linter>=2.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/app"]
+
+# ---------------------------------------------------------------- ruff
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+extend-exclude = ["migrations/versions"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "N",        # pep8-naming
+    "B",        # bugbear
+    "UP",       # pyupgrade
+    "SIM",      # simplify
+    "C4",       # comprehensions
+    "RUF",      # ruff-specific
+    "ASYNC",    # async pitfalls
+    "T20",      # запрет print
+    "ERA",      # закомментированный код
+    "PL",       # pylint (сложность)
+    "S",        # bandit (безопасность)
+]
+ignore = [
+    "RUF001", "RUF002", "RUF003",  # кириллица в строках/комментариях — норма
+    "PLR2004",                     # magic value в сравнениях (ловим на ревью)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "PLR2004"]
+"migrations/**" = ["ERA"]
+"src/app/seed.py" = ["T20"]
+"src/app/ingest.py" = ["T20"]
+# sqladmin настраивается через атрибуты-списки класса — это его публичный API
+"src/app/admin/**" = ["RUF012"]
+
+[tool.ruff.lint.pylint]
+max-args = 6
+max-branches = 10
+max-statements = 40
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path"]
+
+# ---------------------------------------------------------------- mypy
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "src"
+packages = ["app"]
+plugins = ["pydantic.mypy"]
+disallow_any_explicit = true
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = ["sqladmin.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["app.admin.*"]
+# sqladmin использует атрибуты классов с динамическими типами
+disallow_any_explicit = false
+disallow_subclassing_any = false
+
+# ---------------------------------------------------------------- pytest
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-q --strict-markers"
+# Устаревшие API ломают тесты сразу, а не через год при обновлении библиотек
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["*/admin/*", "*/seed.py", "*/ingest.py"]
+# async SQLAlchemy работает через greenlet — без этого покрытие занижается
+concurrency = ["greenlet", "thread"]
+
+[tool.coverage.report]
+fail_under = 80
+skip_covered = true
+show_missing = true
+
+# ---------------------------------------------------------------- import-linter
+[tool.importlinter]
+root_package = "app"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "core не зависит от модулей фич"
+type = "forbidden"
+source_modules = ["app.core"]
+forbidden_modules = ["app.modules", "app.admin", "app.main"]
+
+[[tool.importlinter.contracts]]
+name = "Слои внутри модулей: router -> dependencies -> service -> repository -> models"
+type = "layers"
+containers = [
+    "app.modules.cities",
+    "app.modules.tags",
+    "app.modules.places",
+    "app.modules.scenarios",
+    "app.modules.recommendations",
+]
+# В скобках — необязательные слои (не в каждом модуле есть все)
+layers = ["(router)", "(dependencies)", "(service)", "(repository)", "(models)"]
+exhaustive = false
+
+[[tool.importlinter.contracts]]
+name = "Роутеры не ходят в репозитории и модели напрямую"
+type = "forbidden"
+source_modules = [
+    "app.modules.cities.router",
+    "app.modules.tags.router",
+    "app.modules.places.router",
+    "app.modules.recommendations.router",
+]
+forbidden_modules = [
+    "app.modules.cities.repository",
+    "app.modules.tags.repository",
+    "app.modules.places.repository",
+    "app.modules.scenarios.repository",
+    "app.modules.cities.models",
+    "app.modules.tags.models",
+    "app.modules.places.models",
+    "app.modules.scenarios.models",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "Подбор (scoring) и классификатор (classifier) — чистые функции без инфраструктуры"
+type = "forbidden"
+source_modules = [
+    "app.modules.recommendations.scoring",
+    "app.modules.ingestion.classifier",
+]
+forbidden_modules = ["sqlalchemy", "fastapi", "httpx", "app.core.db"]
